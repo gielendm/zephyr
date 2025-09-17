@@ -49,6 +49,9 @@ _IGNORE_COMPATIBLES = frozenset([
         "zephyr,cdc-acm-uart",
         ])
 
+# The offset of the init pointer in "struct device", in number of pointers.
+DEVICE_INIT_OFFSET = 5
+
 class Priority:
     """Parses and holds a device initialization priority.
 
@@ -98,9 +101,9 @@ class ZephyrInitLevels:
     Attributes:
         file_path: path of the file to be loaded.
     """
-    def __init__(self, file_path):
+    def __init__(self, file_path, elf_file):
         self.file_path = file_path
-        self._elf = ELFFile(open(file_path, "rb"))
+        self._elf = ELFFile(elf_file)
         self._load_objects()
         self._load_level_addr()
         self._process_initlevels()
@@ -108,6 +111,7 @@ class ZephyrInitLevels:
     def _load_objects(self):
         """Initialize the object table."""
         self._objects = {}
+        self._object_addr = {}
 
         for section in self._elf.iter_sections():
             if not isinstance(section, SymbolTableSection):
@@ -119,6 +123,7 @@ class ZephyrInitLevels:
                     sym.entry.st_info.type in ["STT_OBJECT", "STT_FUNC"]):
                     self._objects[sym.entry.st_value] = (
                             sym.name, sym.entry.st_size, sym.entry.st_shndx)
+                    self._object_addr[sym.name] = sym.entry.st_value
 
     def _load_level_addr(self):
         """Find the address associated with known init levels."""
@@ -202,14 +207,20 @@ class ZephyrInitLevels:
                     raise ValueError(f"no symbol at addr {addr:08x}")
                 obj, size, shidx = self._objects[addr]
 
-                arg_name = self._object_name(self._initlevel_pointer(addr, 0, shidx))
+                arg0_name = self._object_name(self._initlevel_pointer(addr, 0, shidx))
+                arg1_name = self._object_name(self._initlevel_pointer(addr, 1, shidx))
 
-                self.initlevels[level].append(f"{obj}: {arg_name}")
-
-                ordinal = self._device_ord_from_name(arg_name)
+                ordinal = self._device_ord_from_name(arg1_name)
                 if ordinal:
+                    dev_addr = self._object_addr[arg1_name]
+                    _, _, shidx = self._objects[dev_addr]
+                    arg0_name = self._object_name(self._initlevel_pointer(
+                        dev_addr, DEVICE_INIT_OFFSET, shidx))
+
                     prio = Priority(level, priority)
-                    self.devices[ordinal] = prio
+                    self.devices[ordinal] = (prio, arg0_name)
+
+                self.initlevels[level].append(f"{obj}: {arg0_name}({arg1_name})")
 
                 addr += size
                 priority += 1
@@ -226,7 +237,7 @@ class Validator():
         edt_pickle: name of the EDT pickle file
         log: a logging.Logger object
     """
-    def __init__(self, elf_file_path, edt_pickle, log):
+    def __init__(self, elf_file_path, edt_pickle, log, elf_file):
         self.log = log
 
         edt_pickle_path = pathlib.Path(
@@ -237,7 +248,7 @@ class Validator():
 
         self._ord2node = edt.dep_ord2node
 
-        self._obj = ZephyrInitLevels(elf_file_path)
+        self._obj = ZephyrInitLevels(elf_file_path, elf_file)
 
         self.errors = 0
 
@@ -255,8 +266,8 @@ class Validator():
                 self.log.info(f"Ignoring priority: {dev_node._binding.compatible}")
                 return
 
-        dev_prio = self._obj.devices.get(dev_ord, None)
-        dep_prio = self._obj.devices.get(dep_ord, None)
+        dev_prio, dev_init = self._obj.devices.get(dev_ord, (None, None))
+        dep_prio, dep_init = self._obj.devices.get(dep_ord, (None, None))
 
         if not dev_prio or not dep_prio:
             return
@@ -271,12 +282,12 @@ class Validator():
                                "the devicetree dependencies.")
             self.errors += 1
             self.log.error(
-                    f"{dev_node.path} is initialized before its dependency "
-                    f"{dep_node.path} ({dev_prio} < {dep_prio})")
+                    f"{dev_node.path} <{dev_init}> is initialized before its dependency "
+                    f"{dep_node.path} <{dep_init}> ({dev_prio} < {dep_prio})")
         else:
             self.log.info(
-                    f"{dev_node.path} {dev_prio} > "
-                    f"{dep_node.path} {dep_prio}")
+                    f"{dev_node.path} <{dev_init}> {dev_prio} > "
+                    f"{dep_node.path} <{dep_init}> {dep_prio}")
 
     def check_edt(self):
         """Scan through all known devices and validate the init priorities."""
@@ -344,17 +355,18 @@ def main(argv=None):
 
     log.info(f"check_init_priorities: {args.elf_file}")
 
-    validator = Validator(args.elf_file, args.edt_pickle, log)
-    if args.initlevels:
-        validator.print_initlevels()
-    else:
-        validator.check_edt()
+    with open(args.elf_file, "rb") as elf_file:
+        validator = Validator(args.elf_file, args.edt_pickle, log, elf_file)
+        if args.initlevels:
+            validator.print_initlevels()
+        else:
+            validator.check_edt()
 
-    if args.always_succeed:
-        return 0
+        if args.always_succeed:
+            return 0
 
-    if validator.errors:
-        return 1
+        if validator.errors:
+            return 1
 
     return 0
 

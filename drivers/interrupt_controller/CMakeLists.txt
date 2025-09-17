@@ -6,6 +6,7 @@ zephyr_library_sources_ifdef(CONFIG_ARCV2_INTERRUPT_UNIT    intc_arcv2_irq_unit.
 zephyr_library_sources_ifdef(CONFIG_CAVS_ICTL               intc_cavs.c)
 zephyr_library_sources_ifdef(CONFIG_DW_ICTL                 intc_dw.c)
 zephyr_library_sources_ifdef(CONFIG_DW_ICTL_ACE             intc_dw_ace.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_INTC_STM32         intc_gpio_stm32.c)
 zephyr_library_sources_ifdef(CONFIG_EXTI_STM32              intc_exti_stm32.c)
 zephyr_library_sources_ifdef(CONFIG_GD32_EXTI               intc_gd32_exti.c)
 zephyr_library_sources_ifdef(CONFIG_GIC_V1                  intc_gic.c)
@@ -37,7 +38,7 @@ zephyr_library_sources_ifdef(CONFIG_CLIC                    intc_clic.c)
 zephyr_library_sources_ifdef(CONFIG_CLIC                    intc_clic.S)
 zephyr_library_sources_ifdef(CONFIG_NRFX_CLIC               intc_nrfx_clic.c)
 zephyr_library_sources_ifdef(CONFIG_NRFX_CLIC               intc_nrfx_clic.S)
-zephyr_library_sources_ifdef(CONFIG_NXP_S32_EIRQ            intc_eirq_nxp_s32.c)
+zephyr_library_sources_ifdef(CONFIG_NXP_SIUL2_EIRQ          intc_nxp_siul2_eirq.c)
 zephyr_library_sources_ifdef(CONFIG_NXP_S32_WKPU            intc_wkpu_nxp_s32.c)
 zephyr_library_sources_ifdef(CONFIG_XMC4XXX_INTC            intc_xmc4xxx.c)
 zephyr_library_sources_ifdef(CONFIG_NXP_PINT                intc_nxp_pint.c)
@@ -57,6 +58,10 @@ if(CONFIG_PLIC_SHELL)
       WARNING:  `CONFIG_PLIC_SHELL` is enabled.
       This can use quite a bit of RAM (PLICs * IRQs * sizeof(uint16_t))"
   )
+endif()
+
+if(CONFIG_NXP_PINT)
+  zephyr_compile_definitions(PINT_USE_LEGACY_CALLBACK=1)
 endif()
 
 zephyr_library_include_directories(${ZEPHYR_BASE}/arch/common/include)

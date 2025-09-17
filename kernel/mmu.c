@@ -19,6 +19,7 @@
 #include <zephyr/sys/check.h>
 #include <zephyr/sys/math_extras.h>
 #include <zephyr/timing/timing.h>
+#include <zephyr/arch/common/init.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
@@ -360,7 +361,7 @@ static void *virt_region_alloc(size_t size, size_t align)
 
 	/* Need to make sure this does not step into kernel memory */
 	if (dest_addr < POINTER_TO_UINT(Z_VIRT_REGION_START_ADDR)) {
-		(void)sys_bitarray_free(&virt_region_bitmap, size, offset);
+		(void)sys_bitarray_free(&virt_region_bitmap, num_bits, offset);
 		return NULL;
 	}
 
@@ -1176,7 +1177,7 @@ void z_mem_manage_init(void)
 	 * and the BSS pages can be brought into physical
 	 * memory to be cleared.
 	 */
-	z_bss_zero();
+	arch_bss_zero();
 #endif /* CONFIG_LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT */
 }
 

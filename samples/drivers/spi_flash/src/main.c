@@ -23,18 +23,22 @@
 #define SPI_FLASH_TEST_REGION_OFFSET 0x7F000
 #elif defined(CONFIG_BOARD_EK_RA8M1) || defined(CONFIG_BOARD_EK_RA8D1)
 #define SPI_FLASH_TEST_REGION_OFFSET 0x40000
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_qspi_nor) && DT_PROP(DT_NODELABEL(quadspi), dual_flash)
+#define SPI_FLASH_TEST_REGION_OFFSET 0xfe000
 #else
 #define SPI_FLASH_TEST_REGION_OFFSET 0xff000
 #endif
 #if defined(CONFIG_BOARD_EK_RA8M1) || defined(CONFIG_BOARD_EK_RA8D1)
 #define SPI_FLASH_SECTOR_SIZE 262144
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_qspi_nor) && DT_PROP(DT_NODELABEL(quadspi), dual_flash)
+#define SPI_FLASH_SECTOR_SIZE 8192
 #else
 #define SPI_FLASH_SECTOR_SIZE        4096
 #endif
 
 #if defined(CONFIG_FLASH_STM32_OSPI) || defined(CONFIG_FLASH_STM32_QSPI) ||                        \
-	defined(CONFIG_FLASH_STM32_XSPI) || defined(CONFIG_FLASH_RENESAS_RA_OSPI_B)
-
+	defined(CONFIG_FLASH_STM32_XSPI) || defined(CONFIG_FLASH_RENESAS_RA_OSPI_B) ||             \
+	defined(CONFIG_FLASH_RENESAS_RA_QSPI)
 #define SPI_FLASH_MULTI_SECTOR_TEST
 #endif
 
@@ -52,6 +56,8 @@
 #define SPI_FLASH_COMPAT nordic_qspi_nor
 #elif DT_HAS_COMPAT_STATUS_OKAY(renesas_ra_ospi_b_nor)
 #define SPI_FLASH_COMPAT renesas_ra_ospi_b_nor
+#elif DT_HAS_COMPAT_STATUS_OKAY(renesas_ra_qspi_nor)
+#define SPI_FLASH_COMPAT renesas_ra_qspi_nor
 #else
 #define SPI_FLASH_COMPAT invalid
 #endif

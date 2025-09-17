@@ -23,6 +23,8 @@ import textwrap
 import unidiff
 import yaml
 
+from dotenv import load_dotenv
+
 from yamllint import config, linter
 
 from junitparser import TestCase, TestSuite, JUnitXml, Skipped, Error, Failure
@@ -291,37 +293,37 @@ class CheckPatch(ComplianceTest):
             cmd = [checkpatch]
 
         cmd.extend(['--mailback', '--no-tree', '-'])
-        diff = subprocess.Popen(('git', 'diff', '--no-ext-diff', COMMIT_RANGE),
+        with subprocess.Popen(('git', 'diff', '--no-ext-diff', COMMIT_RANGE),
                                 stdout=subprocess.PIPE,
-                                cwd=GIT_TOP)
-        try:
-            subprocess.run(cmd,
-                           check=True,
-                           stdin=diff.stdout,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT,
-                           shell=False, cwd=GIT_TOP)
+                                cwd=GIT_TOP) as diff:
+            try:
+                subprocess.run(cmd,
+                               check=True,
+                               stdin=diff.stdout,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT,
+                               shell=False, cwd=GIT_TOP)
 
-        except subprocess.CalledProcessError as ex:
-            output = ex.output.decode("utf-8")
-            regex = r'^\s*\S+:(\d+):\s*(ERROR|WARNING):(.+?):(.+)(?:\n|\r\n?)+' \
-                    r'^\s*#(\d+):\s*FILE:\s*(.+):(\d+):'
+            except subprocess.CalledProcessError as ex:
+                output = ex.output.decode("utf-8")
+                regex = r'^\s*\S+:(\d+):\s*(ERROR|WARNING):(.+?):(.+)(?:\n|\r\n?)+' \
+                        r'^\s*#(\d+):\s*FILE:\s*(.+):(\d+):'
 
-            matches = re.findall(regex, output, re.MULTILINE)
+                matches = re.findall(regex, output, re.MULTILINE)
 
-            # add a guard here for excessive number of errors, do not try and
-            # process each one of them and instead push this as one failure.
-            if len(matches) > 500:
-                self.failure(output)
-                return
+                # add a guard here for excessive number of errors, do not try and
+                # process each one of them and instead push this as one failure.
+                if len(matches) > 500:
+                    self.failure(output)
+                    return
 
-            for m in matches:
-                self.fmtd_failure(m[1].lower(), m[2], m[5], m[6], col=None,
-                        desc=m[3])
+                for m in matches:
+                    self.fmtd_failure(m[1].lower(), m[2], m[5], m[6], col=None,
+                            desc=m[3])
 
-            # If the regex has not matched add the whole output as a failure
-            if len(matches) == 0:
-                self.failure(output)
+                # If the regex has not matched add the whole output as a failure
+                if len(matches) == 0:
+                    self.failure(output)
 
 
 class BoardYmlCheck(ComplianceTest):
@@ -345,15 +347,24 @@ class BoardYmlCheck(ComplianceTest):
 
     def run(self):
         path = resolve_path_hint(self.path_hint)
+        module_ymls = [path / "zephyr" / "module.yml", path / "zephyr" / "module.yaml"]
 
         vendor_prefixes = {"others"}
         # add vendor prefixes from the main zephyr repo
         vendor_prefixes |= get_vendor_prefixes(ZEPHYR_BASE / "dts" / "bindings" / "vendor-prefixes.txt", self.error)
-
         # add vendor prefixes from the current repo
-        dts_roots = get_module_setting_root('dts', path / "zephyr" / "module.yml")
-        for dts_root in dts_roots:
-            vendor_prefix_file = dts_root / "dts" / "bindings" / "vendor-prefixes.txt"
+        dts_root = None
+        for module_yml in module_ymls:
+            if module_yml.is_file():
+                with module_yml.open('r', encoding='utf-8') as f:
+                    meta = yaml.load(f.read(), Loader=SafeLoader)
+                    section = meta.get('build', dict())
+                    build_settings = section.get('settings', None)
+                    if build_settings:
+                        dts_root = build_settings.get('dts_root', None)
+
+        if dts_root:
+            vendor_prefix_file = Path(dts_root) / "dts" / "bindings" / "vendor-prefixes.txt"
             if vendor_prefix_file.exists():
                 vendor_prefixes |= get_vendor_prefixes(vendor_prefix_file, self.error)
 
@@ -506,7 +517,7 @@ class KconfigCheck(ComplianceTest):
         self.check_no_undef_outside_kconfig(kconf)
         self.check_disallowed_defconfigs(kconf)
 
-    def get_modules(self, modules_file, sysbuild_modules_file, settings_file):
+    def get_modules(self, _module_dirs_file, modules_file, sysbuild_modules_file, settings_file):
         """
         Get a list of modules and put them in a file that is parsed by
         Kconfig
@@ -691,13 +702,15 @@ class KconfigCheck(ComplianceTest):
         os.environ["KCONFIG_BINARY_DIR"] = kconfiglib_dir
         os.environ['DEVICETREE_CONF'] = "dummy"
         os.environ['TOOLCHAIN_HAS_NEWLIB'] = "y"
+        kconfig_env_file = os.path.join(kconfiglib_dir, "kconfig_module_dirs.env")
 
         # Older name for DEVICETREE_CONF, for compatibility with older Zephyr
         # versions that don't have the renaming
         os.environ["GENERATED_DTS_BOARD_CONF"] = "dummy"
 
         # For multi repo support
-        self.get_modules(os.path.join(kconfiglib_dir, "Kconfig.modules"),
+        self.get_modules(kconfig_env_file,
+                         os.path.join(kconfiglib_dir, "Kconfig.modules"),
                          os.path.join(kconfiglib_dir, "Kconfig.sysbuild.modules"),
                          os.path.join(kconfiglib_dir, "settings_file.txt"))
         # For Kconfig.dts support
@@ -709,6 +722,8 @@ class KconfigCheck(ComplianceTest):
         # Tells Kconfiglib to generate warnings for all references to undefined
         # symbols within Kconfig files
         os.environ["KCONFIG_WARN_UNDEF"] = "y"
+
+        load_dotenv(kconfig_env_file)
 
         try:
             # Note this will both print warnings to stderr _and_ return
@@ -722,6 +737,61 @@ class KconfigCheck(ComplianceTest):
         finally:
             # Clean up the temporary directory
             shutil.rmtree(kconfiglib_dir)
+
+    def module_kconfigs(self, regex):
+        manifest = Manifest.from_file()
+        kconfigs = ""
+
+        # Use hard coded paths for Zephyr for tests, samples and ext. module root
+        tmp_output = git("grep", "-I", "-h", "--perl-regexp", regex, "--", ":tests", ":samples",
+                         ":modules", cwd=ZEPHYR_BASE, ignore_non_zero=True)
+
+        if len(tmp_output) > 0:
+            kconfigs += tmp_output + "\n"
+
+        for project in manifest.get_projects([]):
+            if not manifest.is_active(project):
+                continue
+
+            if not project.is_cloned():
+                continue
+
+            module_path = PurePath(project.abspath)
+            module_yml = module_path.joinpath('zephyr/module.yml')
+
+            if not Path(module_yml).is_file():
+                module_yml = module_path.joinpath('zephyr/module.yaml')
+
+            if Path(module_yml).is_file():
+                dirs = []
+
+                with Path(module_yml).open('r', encoding='utf-8') as f:
+                    meta = yaml.load(f.read(), Loader=SafeLoader)
+
+                for folder_type in ['samples', 'tests']:
+                    if folder_type in meta:
+                        for path_ext in meta[folder_type]:
+                            path_full = module_path.joinpath(path_ext)
+
+                            if Path(path_full).is_dir():
+                                dirs.append(":" + path_ext)
+
+                # Add ext. module root, if one is defined
+                if 'build' in meta and 'settings' in meta['build'] and \
+                     'module_ext_root' in meta['build']['settings']:
+                    path_full = module_path.joinpath(meta['build']['settings']['module_ext_root'])
+
+                    if Path(path_full).is_dir():
+                        dirs.append(":" + meta['build']['settings']['module_ext_root'])
+
+                if len(dirs) > 0:
+                    tmp_output = git("grep", "-I", "-h", "--perl-regexp", regex, "--",
+                                     *dirs, cwd=module_path, ignore_non_zero=True)
+
+                    if len(tmp_output) > 0:
+                        kconfigs += tmp_output + "\n"
+
+        return kconfigs
 
     def get_logging_syms(self, kconf):
         # Returns a set() with the names of the Kconfig symbols generated with
@@ -743,9 +813,8 @@ class KconfigCheck(ComplianceTest):
         # Warning: Needs to work with both --perl-regexp and the 're' module.
         regex = r"^\s*(?:module\s*=\s*)([A-Z0-9_]+)\s*(?:#|$)"
 
-        # Grep samples/ and tests/ for symbol definitions
-        grep_stdout = git("grep", "-I", "-h", "--perl-regexp", regex, "--",
-                          ":samples", ":tests", cwd=ZEPHYR_BASE)
+        # Grep samples/ and tests/ for symbol definitions in all modules
+        grep_stdout = self.module_kconfigs(regex)
 
         names = re.findall(regex, grep_stdout, re.MULTILINE)
 
@@ -898,9 +967,8 @@ Found disallowed Kconfig symbol in SoC Kconfig files: {sym_name:35}
         # (?:...) is a non-capturing group.
         regex = r"^\s*(?:menu)?config\s*([A-Z0-9_]+)\s*(?:#|$)"
 
-        # Grep samples/ and tests/ for symbol definitions
-        grep_stdout = git("grep", "-I", "-h", "--perl-regexp", regex, "--",
-                          ":samples", ":tests", cwd=ZEPHYR_BASE)
+        # Grep samples/ and tests/ for symbol definitions in all modules
+        grep_stdout = self.module_kconfigs(regex)
 
         # Generate combined list of configs and choices from the main Kconfig tree.
         kconf_syms = kconf.unique_defined_syms + kconf.unique_choices
@@ -1147,6 +1215,8 @@ flagged.
         "BOOT_DIRECT_XIP", # Used in sysbuild for MCUboot configuration
         "BOOT_DIRECT_XIP_REVERT", # Used in sysbuild for MCUboot configuration
         "BOOT_ENCRYPTION_KEY_FILE", # Used in sysbuild
+        "BOOT_ENCRYPT_ALG_AES_128", # Used in sysbuild
+        "BOOT_ENCRYPT_ALG_AES_256", # Used in sysbuild
         "BOOT_ENCRYPT_IMAGE", # Used in sysbuild
         "BOOT_FIRMWARE_LOADER", # Used in sysbuild for MCUboot configuration
         "BOOT_FIRMWARE_LOADER_BOOT_MODE", # Used in sysbuild for MCUboot configuration
@@ -1154,11 +1224,13 @@ flagged.
         "BOOT_IMAGE_EXECUTABLE_RAM_START", # MCUboot setting
         "BOOT_MAX_IMG_SECTORS_AUTO", # Used in sysbuild
         "BOOT_RAM_LOAD", # Used in sysbuild for MCUboot configuration
+        "BOOT_RAM_LOAD_REVERT", # Used in sysbuild for MCUboot configuration
         "BOOT_SERIAL_BOOT_MODE",     # Used in (sysbuild-based) test/
                                      # documentation
         "BOOT_SERIAL_CDC_ACM",       # Used in (sysbuild-based) test
         "BOOT_SERIAL_ENTRANCE_GPIO", # Used in (sysbuild-based) test
         "BOOT_SERIAL_IMG_GRP_HASH",  # Used in documentation
+        "BOOT_SERIAL_UART",          # Used in (sysbuild-based) test
         "BOOT_SHARE_BACKEND_RETENTION", # Used in Kconfig text
         "BOOT_SHARE_DATA",           # Used in Kconfig text
         "BOOT_SHARE_DATA_BOOTINFO", # Used in (sysbuild-based) test
@@ -1195,6 +1267,9 @@ flagged.
         "FOO_LOG_LEVEL",
         "FOO_SETTING_1",
         "FOO_SETTING_2",
+        "GEN_UICR_GENERATE_PERIPHCONF", # Used in specialized build tool, not part of main Kconfig
+        "GEN_UICR_SECONDARY", # Used in specialized build tool, not part of main Kconfig
+        "GEN_UICR_SECONDARY_GENERATE_PERIPHCONF", # Used in specialized build tool, not part of main Kconfig
         "HEAP_MEM_POOL_ADD_SIZE_", # Used as an option matching prefix
         "HUGETLBFS",          # Linux, in boards/xtensa/intel_adsp_cavs25/doc
         "IAR_BUFFERED_WRITE",
@@ -1223,8 +1298,12 @@ flagged.
         "MCUBOOT_SERIAL",           # Used in (sysbuild-based) test/
                                     # documentation
         "MCUMGR_GRP_EXAMPLE_OTHER_HOOK", # Used in documentation
+        "MCUX_HW_CORE", # Used in modules/hal_nxp/mcux/mcux-sdk-ng/device/device.cmake.
+                        # It is a variable used by MCUX SDK CMake.
         "MCUX_HW_DEVICE_CORE", # Used in modules/hal_nxp/mcux/mcux-sdk-ng/device/device.cmake.
                                # It is a variable used by MCUX SDK CMake.
+        "MCUX_HW_FPU_TYPE", # Used in modules/hal_nxp/mcux/mcux-sdk-ng/device/device.cmake.
+                            # It is a variable used by MCUX SDK CMake.
         "MISSING",
         "MODULES",
         "MODVERSIONS",        # Linux, in boards/xtensa/intel_adsp_cavs25/doc
@@ -1294,13 +1373,17 @@ class KconfigBasicNoModulesCheck(KconfigBasicCheck):
     """
     name = "KconfigBasicNoModules"
     path_hint = "<zephyr-base>"
+    EMPTY_FILE_CONTENTS = "# Empty\n"
 
-    def get_modules(self, modules_file, sysbuild_modules_file, settings_file):
+    def get_modules(self, module_dirs_file, modules_file, sysbuild_modules_file, settings_file):
+        with open(module_dirs_file, 'w') as fp_module_file:
+            fp_module_file.write(self.EMPTY_FILE_CONTENTS)
+
         with open(modules_file, 'w') as fp_module_file:
-            fp_module_file.write("# Empty\n")
+            fp_module_file.write(self.EMPTY_FILE_CONTENTS)
 
         with open(sysbuild_modules_file, 'w') as fp_module_file:
-            fp_module_file.write("# Empty\n")
+            fp_module_file.write(self.EMPTY_FILE_CONTENTS)
 
 
 class KconfigHWMv2Check(KconfigBasicCheck):
@@ -1335,10 +1418,6 @@ class SysbuildKconfigCheck(KconfigCheck):
         "OTHER_APP_IMAGE_NAME", # Used in sysbuild documentation as example
         "OTHER_APP_IMAGE_PATH", # Used in sysbuild documentation as example
         "SECOND_SAMPLE", # Used in sysbuild documentation
-        "SUIT_ENVELOPE", # Used by nRF runners to program provisioning data
-        "SUIT_MPI_APP_AREA_PATH", # Used by nRF runners to program provisioning data
-        "SUIT_MPI_GENERATE", # Used by nRF runners to program provisioning data
-        "SUIT_MPI_RAD_AREA_PATH", # Used by nRF runners to program provisioning data
         # zephyr-keep-sorted-stop
     }
 
@@ -1732,6 +1811,23 @@ class ModulesMaintainers(ComplianceTest):
                 self.failure(f"Missing {maintainers_file} entry for: \"{area}\"")
 
 
+class ZephyrModuleFile(ComplianceTest):
+    """
+    Check that no zephyr/module.yml file has been added to the Zephyr repository
+    """
+    name = "ZephyrModuleFile"
+    doc = "Check that no zephyr/module.yml file has been added to the Zephyr repository."
+
+    def run(self):
+        module_files = [ZEPHYR_BASE / 'zephyr' / 'module.yml',
+                        ZEPHYR_BASE / 'zephyr' / 'module.yaml']
+
+        for file in module_files:
+            if os.path.exists(file):
+                self.failure("A zephyr module file has been added to the Zephyr repository")
+                break
+
+
 class YAMLLint(ComplianceTest):
     """
     YAMLLint
@@ -1816,7 +1912,7 @@ class KeepSorted(ComplianceTest):
 
     MARKER = "zephyr-keep-sorted"
 
-    def block_check_sorted(self, block_data, regex):
+    def block_check_sorted(self, block_data, *, regex, strip, fold):
         def _test_indent(txt: str):
             return txt.startswith((" ", "\t"))
 
@@ -1831,6 +1927,9 @@ class KeepSorted(ComplianceTest):
                 # Ignore blank lines
                 continue
 
+            if strip is not None:
+                line = line.strip(strip)
+
             if regex:
                 # check for regex
                 if not re.match(regex, line):
@@ -1839,9 +1938,10 @@ class KeepSorted(ComplianceTest):
                 if _test_indent(line):
                     continue
 
-                # Fold back indented lines after the current one
-                for cont in takewhile(_test_indent, lines[idx + 1:]):
-                    line += cont.strip()
+                if fold:
+                    # Fold back indented lines after the current one
+                    for cont in takewhile(_test_indent, lines[idx + 1:]):
+                        line += cont.strip()
 
             if line < last:
                 return idx
@@ -1861,9 +1961,13 @@ class KeepSorted(ComplianceTest):
 
         start_marker = f"{self.MARKER}-start"
         stop_marker = f"{self.MARKER}-stop"
-        regex_marker = r"re\((.+)\)"
+        regex_marker = r"re\(([^)]+)\)"
+        strip_marker = r"strip\(([^)]+)\)"
+        nofold_marker = "nofold"
         start_line = 0
         regex = None
+        strip = None
+        fold = True
 
         for line_num, line in enumerate(fp.readlines(), start=1):
             if start_marker in line:
@@ -1878,6 +1982,11 @@ class KeepSorted(ComplianceTest):
                 # Test for a regex block
                 match = re.search(regex_marker, line)
                 regex = match.group(1) if match else None
+
+                match = re.search(strip_marker, line)
+                strip = match.group(1) if match else None
+
+                fold = nofold_marker not in line
             elif stop_marker in line:
                 if not in_block:
                     desc = f"{stop_marker} without {start_marker}"
@@ -1885,7 +1994,7 @@ class KeepSorted(ComplianceTest):
                                      desc=desc)
                 in_block = False
 
-                idx = self.block_check_sorted(block_data, regex)
+                idx = self.block_check_sorted(block_data, regex=regex, strip=strip, fold=fold)
                 if idx >= 0:
                     desc = f"sorted block has out-of-order line at {start_line + idx}"
                     self.fmtd_failure("error", "KeepSorted", file, line_num,
@@ -2182,6 +2291,8 @@ def _main(args):
             test.run()
         except EndTest:
             pass
+        except BaseException:
+            test.failure(f"An exception occurred in {test.name}:\n{traceback.format_exc()}")
 
         # Annotate if required
         if args.annotate:
@@ -2197,6 +2308,7 @@ def _main(args):
         xml.write(args.output, pretty=True)
 
     failed_cases = []
+    warning_cases = []
     name2doc = {testcase.name: testcase.doc
                 for testcase in inheritors(ComplianceTest)}
 
@@ -2205,19 +2317,31 @@ def _main(args):
             if case.is_skipped:
                 logging.warning(f"Skipped {case.name}")
             else:
-                failed_cases.append(case)
+                if any(res.type in ('error', 'failure') for res in case.result):
+                    failed_cases.append(case)
+                else:
+                    warning_cases.append(case)
         else:
             # Some checks can produce no .result
             logging.info(f"No JUnit result for {case.name}")
 
     n_fails = len(failed_cases)
+    n_warnings = len(warning_cases)
 
-    if n_fails:
-        print(f"{n_fails} checks failed")
-        for case in failed_cases:
+    if n_fails or n_warnings:
+        if n_fails:
+            print(f"{n_fails} check(s) failed")
+        if n_warnings:
+            print(f"{n_warnings} check(s) with warnings only")
+
+        for case in failed_cases + warning_cases:
             for res in case.result:
                 errmsg = res.text.strip()
-                logging.error(f"Test {case.name} failed: \n{errmsg}")
+                if res.type in ('error', 'failure'):
+                    logging.error(f"Test {case.name} failed: \n{errmsg}")
+                else:
+                    logging.warning(f"Test {case.name} warning: \n{errmsg}")
+
             if args.no_case_output:
                 continue
             with open(f"{case.name}.txt", "w") as f:
@@ -2234,14 +2358,6 @@ def _main(args):
 
 def main(argv=None):
     args = parse_args(argv)
-
-    try:
-        # pylint: disable=unused-import
-        from lxml import etree
-    except ImportError:
-        print("\nERROR: Python module lxml not installed, unable to proceed")
-        print("See https://github.com/weiwei/junitparser/issues/99")
-        return 1
 
     try:
         n_fails = _main(args)

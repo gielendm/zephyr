@@ -45,6 +45,15 @@
 	};
 };
 
+&clk_hsi {
+	status = "okay";
+};
+
+&clk_hse {
+	clock-frequency = <DT_FREQ_M(40)>;
+	status = "okay";
+};
+
 &rcc {
 	clock-frequency = <DT_FREQ_M(400)>;
 };
@@ -54,6 +63,17 @@
 };
 
 &gpioj {
+	status = "okay";
+};
+
+&gpioz {
+	status = "okay";
+};
+
+&spi3 {
+	pinctrl-0 = <&spi3_nss_pb1 &spi3_sck_pb7
+		     &spi3_miso_pb10 &spi3_mosi_pb8>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
@@ -69,4 +89,10 @@
 	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "disabled";
+};
+
+&i2c8 {
+	pinctrl-0 = <&i2c8_scl_pz4 &i2c8_sda_pz3>;
+	pinctrl-names = "default";
+	status = "okay";
 };

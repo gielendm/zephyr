@@ -1439,8 +1439,8 @@ send_next:
 			     "%s:%d unexpected sequence number in original FIN, got %d",
 			     __func__, __LINE__, get_rel_seq(th));
 		zassert_true(ntohl(th->th_ack) == 2,
-			     "%s:%d unexpected acknowlegdement in original FIN, got %d",
-			     __func__, __LINE__, ntohl(th->th_ack));
+			     "%s:%d unexpected acknowledgment in original FIN, got %d", __func__,
+			     __LINE__, ntohl(th->th_ack));
 		t_state = T_FIN_1;
 		/* retransmit the data that we already send*/
 		reply = prepare_data_packet(af, htons(MY_PORT),
@@ -1457,7 +1457,7 @@ send_next:
 			     "%s:%i unexpected sequence number in retransmitted FIN, got %d",
 			     __func__, __LINE__, get_rel_seq(th));
 		zassert_true(ntohl(th->th_ack) == 2,
-			     "%s:%i unexpected acknowlegdement in retransmitted FIN, got %d",
+			     "%s:%i unexpected acknowledgment in retransmitted FIN, got %d",
 			     __func__, __LINE__, ntohl(th->th_ack));
 		ack = ack + 1U;
 		t_state = T_FIN_2;
@@ -1575,8 +1575,8 @@ static void handle_data_during_fin1_test(sa_family_t af, struct tcphdr *th)
 			     "%s:%d unexpected sequence number in original FIN, got %d",
 			     __func__, __LINE__, get_rel_seq(th));
 		zassert_true(ntohl(th->th_ack) == 1,
-			     "%s:%d unexpected acknowlegdement in original FIN, got %d",
-			     __func__, __LINE__, ntohl(th->th_ack));
+			     "%s:%d unexpected acknowledgment in original FIN, got %d", __func__,
+			     __LINE__, ntohl(th->th_ack));
 
 		ack = ack + 1U;
 
@@ -2094,11 +2094,11 @@ static struct out_of_order_check_struct out_of_order_check_list[] = {
 	{ 0,  10, 10, 0},
 	{ 10, 10, 40, 0}, /* First sequence complete */
 	{ 32,  6, 40, 0}, /* Invalid seqnum (old) */
-	{ 30, 16, 40, 0}, /* Partial data valid (not supported yet) */
-	{ 50,  6, 40, 0},
-	{ 50,  3, 40, 0}, /* Discardable packet */
-	{ 55,  5, 40, 0},
-	{ 40, 10, 60, 0}, /* Some bigger data */
+	{ 30, 16, 46, 0}, /* Partial data valid */
+	{ 50,  6, 46, 0},
+	{ 50,  3, 46, 0}, /* Discardable packet */
+	{ 55,  5, 46, 0},
+	{ 30, 20, 60, 0}, /* Partial data valid with pending data merge */
 	{ 61,  2, 60, 0},
 	{ 60,  5, 65, 0}, /* Over lapped incoming packet */
 	{ 66,  4, 65, 0},

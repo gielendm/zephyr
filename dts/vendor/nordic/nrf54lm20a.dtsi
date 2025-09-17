@@ -277,11 +277,6 @@
 				/* Note: In the nRF Connect SDK the SoftDevice Controller
 				 * is added and set as the default Bluetooth Controller.
 				 */
-				bt_hci_sdc: bt_hci_sdc {
-					compatible = "nordic,bt-hci-sdc";
-					status = "disabled";
-				};
-
 				bt_hci_controller: bt_hci_controller {
 					compatible = "zephyr,bt-hci-ll-sw-split";
 					status = "disabled";
@@ -800,19 +795,19 @@
 				#address-cells = <1>;
 				#size-cells = <1>;
 
-				gpregret1: gpregret1@51c {
+				gpregret1: gpregret1@500 {
 					#address-cells = <1>;
 					#size-cells = <1>;
 					compatible = "nordic,nrf-gpregret";
-					reg = <0x51c 0x1>;
+					reg = <0x500 0x1>;
 					status = "disabled";
 				};
 
-				gpregret2: gpregret2@520 {
+				gpregret2: gpregret2@504 {
 					#address-cells = <1>;
 					#size-cells = <1>;
 					compatible = "nordic,nrf-gpregret";
-					reg = <0x520 0x1>;
+					reg = <0x504 0x1>;
 					status = "disabled";
 				};
 			};
@@ -860,7 +855,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			cpuapp_nvic: interrupt-controller@e000e100  {
+			cpuapp_nvic: interrupt-controller@e000e100 {
 				#address-cells = <1>;
 				compatible = "arm,v8m-nvic";
 				reg = <0xe000e100 0xc00>;

@@ -1,13 +1,14 @@
-/**
- * @file
- * @brief ADC public API header file.
- */
-
 /*
  * Copyright (c) 2018 Nordic Semiconductor ASA
  * Copyright (c) 2015 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * @file
+ * @ingroup adc_interface
+ * @brief Main header file for ADC (Analog-to-Digital Converter) driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_ADC_H_
@@ -22,8 +23,8 @@ extern "C" {
 #endif
 
 /**
- * @brief ADC driver APIs
- * @defgroup adc_interface ADC driver APIs
+ * @brief Interfaces for Analog-to-Digital Converters (ADC).
+ * @defgroup adc_interface ADC
  * @since 1.0
  * @version 1.0.0
  * @ingroup io_interfaces
@@ -259,10 +260,11 @@ struct adc_channel_cfg {
 	.reference        = DT_STRING_TOKEN(node_id, zephyr_reference), \
 	.acquisition_time = DT_PROP(node_id, zephyr_acquisition_time), \
 	.channel_id       = DT_REG_ADDR(node_id), \
-IF_ENABLED(UTIL_OR(DT_PROP(node_id, zephyr_differential), \
+COND_CODE_1(UTIL_OR(DT_PROP(node_id, zephyr_differential), \
 		   UTIL_AND(CONFIG_ADC_CONFIGURABLE_INPUTS, \
 			    DT_NODE_HAS_PROP(node_id, zephyr_input_negative))), \
-	(.differential    = true,)) \
+	(.differential    = true,), \
+	(.differential    = false,)) \
 IF_ENABLED(CONFIG_ADC_CONFIGURABLE_INPUTS, \
 	(.input_positive  = DT_PROP_OR(node_id, zephyr_input_positive, 0), \
 	 .input_negative  = DT_PROP_OR(node_id, zephyr_input_negative, 0),)) \

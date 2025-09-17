@@ -19,6 +19,7 @@
 		led0 = &red_led;
 		sw0 = &user_button_1;
 		ambient-temp0 = &p3t1755;
+		rtc = &rtc1;
 	};
 
 	chosen {
@@ -30,6 +31,7 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			status = "okay";
 			gpios = <&gpio8 6 GPIO_ACTIVE_HIGH>;
@@ -39,9 +41,10 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button_1: button_0 {
 			label = "User SW6";
-			gpios = <&gpio8 5 (GPIO_ACTIVE_LOW)>;
+			gpios = <&gpio8 5 GPIO_ACTIVE_LOW>;
 			zephyr,code = <INPUT_KEY_0>;
 			status = "okay";
 		};
@@ -68,7 +71,7 @@
 	wakeup-source;
 };
 
-&flexcomm19{
+&flexcomm19 {
 	status = "okay";
 };
 
@@ -96,4 +99,14 @@
 		reg = <0x48 0x0236 0x152a0090>;
 		status = "okay";
 	};
+};
+
+&acmp {
+	status = "okay";
+	pinctrl-0 = <&pinmux_acmp>;
+	pinctrl-names = "default";
+};
+
+&rtc1 {
+	status = "okay";
 };

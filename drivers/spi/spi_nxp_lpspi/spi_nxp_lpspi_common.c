@@ -11,6 +11,15 @@
  * the driver is going to achieve the zephyr API.
  */
 
+ /*
+  * The other spi_nxp_lpspi driver source files also use DT_DRV_COMPAT and it is used by the
+  * spi_context.h file to determine if the gpio cs code can be removed.
+  * If DT_DRV_COMPAT is not defined in this file, the gpio cs code may not be removed for this file
+  * but in the other spi_nxp_lpspi driver source files it may be removed and result in breakage of
+  * this driver. Do not remove DT_DRV_COMPAT from this file.
+  */
+#define DT_DRV_COMPAT nxp_lpspi
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(spi_lpspi, CONFIG_SPI_LOG_LEVEL);
 
@@ -132,7 +141,10 @@ static uint8_t lpspi_calc_delay_scaler(uint32_t desired_delay_ns,
 	delay_cycles = (uint64_t)prescaled_clock * desired_delay_ns;
 	delay_cycles = DIV_ROUND_UP(delay_cycles, NSEC_PER_SEC);
 
-       /* what the min_cycles parameter is about is that
+	/* clamp to minimally possible cycles to avoid underflow */
+	delay_cycles = MAX(delay_cycles, min_cycles);
+
+	/* what the min_cycles parameter is about is that
 	* PCSSCK and SCKPSC are +1 cycles of the programmed value,
 	* while DBT is +2 cycles of the programmed value.
 	* So this calculates the value to program to the register.

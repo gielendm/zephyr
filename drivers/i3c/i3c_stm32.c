@@ -115,6 +115,7 @@ struct i3c_stm32_config {
 	I3C_TypeDef *i3c;                      /* Pointer to I3C module base addr */
 	irq_config_func_t irq_config_func;     /* IRQ config function */
 	const struct stm32_pclken *pclken;     /* Pointer to peripheral clock configuration */
+	size_t pclk_len;
 	const struct pinctrl_dev_config *pcfg; /* Pointer to pin control configuration */
 };
 
@@ -444,6 +445,16 @@ static int i3c_stm32_activate(const struct device *dev)
 	if (clock_control_on(clk, (clock_control_subsys_t)&config->pclken[0]) != 0) {
 		return -EIO;
 	}
+
+	if (config->pclk_len > 1) {
+		/* Enable I3C clock source */
+		ret = clock_control_configure(clk, (clock_control_subsys_t)&config->pclken[1],
+					      NULL);
+		if (ret < 0) {
+			return -EIO;
+		}
+	}
+
 	return 0;
 }
 
@@ -568,9 +579,14 @@ static int i3c_stm32_config_clk_wave(const struct device *dev)
 	uint32_t i3c_clock = 0;
 	uint32_t i2c_bus_freq = data->drv_data.ctrl_config.scl.i2c;
 	uint32_t i3c_bus_freq = data->drv_data.ctrl_config.scl.i3c;
+	/* Set kern_clk_idx = 1, if independent kernel clock is used */
+	uint32_t kern_clk_idx = (cfg->pclk_len > 1) ? 1 : 0;
+	int ret;
 
-	if (clock_control_get_rate(clk, (clock_control_subsys_t)&cfg->pclken[0], &i3c_clock) < 0) {
-		LOG_ERR("Failed call clock_control_get_rate(pclken[0])");
+	ret = clock_control_get_rate(clk, (clock_control_subsys_t)&cfg->pclken[kern_clk_idx],
+				     &i3c_clock);
+	if (ret < 0) {
+		LOG_ERR("Failed call clock_control_get_rate(pclken[%d])", kern_clk_idx);
 		return -EIO;
 	}
 
@@ -579,7 +595,6 @@ static int i3c_stm32_config_clk_wave(const struct device *dev)
 	uint8_t scll_pp = 0;
 	uint8_t sclh_i3c = 0;
 	uint32_t clk_wave = 0;
-	int ret;
 
 	LOG_DBG("I3C Clock = %u, I2C Bus Freq = %u, I3C Bus Freq = %u", i3c_clock, i2c_bus_freq,
 		i3c_bus_freq);
@@ -1047,6 +1062,7 @@ static int i3c_stm32_do_daa(const struct device *dev)
 	const struct i3c_stm32_config *config = dev->config;
 	struct i3c_stm32_data *data = dev->data;
 	I3C_TypeDef *i3c = config->i3c;
+	int ret = 0;
 
 	k_mutex_lock(&data->bus_mutex, K_FOREVER);
 
@@ -1068,7 +1084,8 @@ static int i3c_stm32_do_daa(const struct device *dev)
 
 	/* Wait for DAA to finish */
 	if (k_sem_take(&data->device_sync_sem, STM32_I3C_TRANSFER_TIMEOUT) != 0) {
-		return -ETIMEDOUT;
+		ret = -ETIMEDOUT;
+		goto i3c_stm32_do_daa_ending;
 	}
 
 	if (data->msg_state == STM32_I3C_MSG_ERR) {
@@ -1076,12 +1093,14 @@ static int i3c_stm32_do_daa(const struct device *dev)
 		/* Enable TXFNF interrupt in case an error occurred before it was enabled by RXFNE
 		 */
 		LL_I3C_EnableIT_TXFNF(i3c);
-		return -EIO;
+		ret = -EIO;
+		goto i3c_stm32_do_daa_ending;
 	}
 
+i3c_stm32_do_daa_ending:
 	k_mutex_unlock(&data->bus_mutex);
 
-	return 0;
+	return ret;
 }
 
 #ifdef CONFIG_I3C_STM32_DMA
@@ -2165,8 +2184,6 @@ static DEVICE_API(i3c, i3c_stm32_driver_api) = {
 #define STM32_I3C_IRQ_HANDLER_DECL(index)                                                          \
 	static void i3c_stm32_irq_config_func_##index(const struct device *dev)
 
-#define STM32_I3C_IRQ_HANDLER_FUNCTION(index) .irq_config_func = i3c_stm32_irq_config_func_##index,
-
 #define STM32_I3C_IRQ_HANDLER(index)                                                               \
 	static void i3c_stm32_irq_config_func_##index(const struct device *dev)                    \
 	{                                                                                          \
@@ -2185,7 +2202,9 @@ static DEVICE_API(i3c, i3c_stm32_driver_api) = {
                                                                                                    \
 	static const struct i3c_stm32_config i3c_stm32_cfg_##index = {                             \
 		.i3c = (I3C_TypeDef *)DT_INST_REG_ADDR(index),                                     \
-		STM32_I3C_IRQ_HANDLER_FUNCTION(index).pclken = pclken_##index,                     \
+		.irq_config_func = i3c_stm32_irq_config_func_##index,                              \
+		.pclken = pclken_##index,                                                          \
+		.pclk_len = DT_INST_NUM_CLOCKS(index),                                             \
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),                                     \
 		.drv_cfg.dev_list.i3c = i3c_stm32_dev_arr_##index,                                 \
 		.drv_cfg.dev_list.num_i3c = ARRAY_SIZE(i3c_stm32_dev_arr_##index),                 \

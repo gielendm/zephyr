@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025 STMicroelectronics
+ * Copyright (c) 2025 ZAL Zentrum für Angewandte Luftfahrtforschung GmbH
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -99,9 +100,9 @@
 				compatible = "st,stm32-nv-flash", "soc-nv-flash";
 
 				write-block-size = <16>;
-				erase-block-size = <8192>;
-				/* maximum erase time(ms) for a 8K sector */
-				max-erase-time = <5>;
+				erase-block-size = <4096>;
+				/* maximum erase time(ms) for a 4KB page */
+				max-erase-time = <14>;
 			};
 		};
 
@@ -118,12 +119,13 @@
 		};
 
 		exti: interrupt-controller@40032000 {
-			compatible = "st,stm32g0-exti","st,stm32-exti";
+			compatible = "st,stm32g0-exti", "st,stm32-exti";
 			interrupt-controller;
 			#interrupt-cells = <1>;
 			#address-cells = <1>;
 			reg = <0x40032000 0x400>;
-			num-lines = <16>;
+			clocks = <&rcc STM32_CLOCK(APB3, 1)>;
+			num-lines = <22>;
 			interrupts = <11 0>, <12 0>, <13 0>, <14 0>,
 				     <15 0>, <16 0>, <17 0>, <18 0>,
 				     <19 0>, <20 0>, <21 0>, <22 0>,
@@ -277,6 +279,17 @@
 			status = "disabled";
 		};
 
+		fdcan1: can@4000a400 {
+			compatible = "st,stm32-fdcan";
+			reg = <0x4000a400 0x400>, <0x4000ac00 0x350>;
+			reg-names = "m_can", "message_ram";
+			interrupts = <39 0>, <40 0>;
+			interrupt-names = "int0", "int1";
+			clocks = <&rcc STM32_CLOCK(APB1_2, 9)>;
+			bosch,mram-cfg = <0x0 28 8 3 3 0 3 3>;
+			status = "disabled";
+		};
+
 		i2c1: i2c@40005400 {
 			compatible = "st,stm32-i2c-v2";
 			reg = <0x40005400 0x400>;
@@ -326,7 +339,7 @@
 			#dma-cells = <3>;
 			reg = <0x40020000 0x400>;
 			interrupts = <29 0 30 0 31 0 32 0 33 0 34 0 35 0 36 0
-					80 0 81 0 82 0 83 0>;
+				      80 0 81 0 82 0 83 0>;
 			clocks = <&rcc STM32_CLOCK(AHB1, 0)>;
 			dma-channels = <12>;
 			dma-requests = <114>;
@@ -377,6 +390,47 @@
 			interrupts = <0 0>;
 			status = "disabled";
 		};
+
+		sai1_a: sai1@40015404 {
+			compatible = "st,stm32-sai";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40015404 0x20>;
+			clocks = <&rcc STM32_CLOCK(APB2, 21)>;
+			dmas = <&gpdma1 1 36 (STM32_DMA_MODE_NORMAL | STM32_DMA_PRIORITY_HIGH |
+				STM32_DMA_16BITS)>;
+			status = "disabled";
+		};
+
+		sai1_b: sai1@40015424 {
+			compatible = "st,stm32-sai";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40015424 0x20>;
+			clocks = <&rcc STM32_CLOCK(APB2, 21)>;
+			dmas = <&gpdma1 0 37 (STM32_DMA_MODE_NORMAL | STM32_DMA_PRIORITY_HIGH |
+				STM32_DMA_16BITS)>;
+			status = "disabled";
+		};
+
+		usb: usb@40016000 {
+			compatible = "st,stm32-usb";
+			reg = <0x40016000 0x400>;
+			interrupts = <73 0>;
+			interrupt-names = "usb";
+			num-bidir-endpoints = <8>;
+			ram-size = <2048>;
+			maximum-speed = "full-speed";
+			clocks = <&rcc STM32_CLOCK(APB2, 24)>,
+				 <&rcc STM32_SRC_HSI48 ICLK_SEL(0)>;
+			phys = <&usb_fs_phy>;
+			status = "disabled";
+		};
+	};
+
+	usb_fs_phy: usb_fs_phy {
+		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
 	};
 };
 
